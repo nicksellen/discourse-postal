@@ -1,3 +1,9 @@
+# name: discourse-postal
+# about: Discourse Plugin for processing Postal webhooks
+# version: 0.1
+# authors: Nick Sellen, Tiago Macedo
+# url: https://github.com/nicksellen/discourse-postal
+
 require 'openssl'
 require 'base64'
 
