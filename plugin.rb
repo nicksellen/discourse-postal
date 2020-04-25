@@ -1,30 +1,22 @@
-# name: discourse-mailgun
-# about: Discourse Plugin for processing Mailgun webhooks
-# version: 0.1
-# authors: Tiago Macedo
-# url: https://github.com/reallyreally/discourse-mailgun
-
 require 'openssl'
+require 'base64'
 
-enabled_site_setting :mailgun_api_key
+enabled_site_setting :postal_webhook_public_key
 enabled_site_setting :discourse_base_url
 enabled_site_setting :discourse_api_key
 enabled_site_setting :discourse_api_username
 
 after_initialize do
-  module ::DiscourseMailgun
+  module ::DiscoursePostal
     class Engine < ::Rails::Engine
-      engine_name "discourse-mailgun"
-      isolate_namespace DiscourseMailgun
+      engine_name "discourse-postal"
+      isolate_namespace DiscoursePostal
 
       class << self
         # signature verification filter
-        def verify_signature(timestamp, token, signature, api_key)
-          digest = OpenSSL::Digest::SHA256.new
-          data = [timestamp, token].join
-          hex = OpenSSL::HMAC.hexdigest(digest, api_key, data)
-
-          signature == hex
+        def verify_signature(key, signature, body)
+          rsa_key = OpenSSL::PKey::RSA.new("-----BEGIN PUBLIC KEY-----\n" + key + "\n-----END PUBLIC KEY-----")
+          rsa_key.verify(OpenSSL::Digest::SHA1.new, Base64.decode64(signature), body)
         end
 
         # posting the email through the discourse api
@@ -39,22 +31,24 @@ after_initialize do
 
   require_dependency "application_controller"
 
-  class DiscourseMailgun::MailgunController < ::ApplicationController
+  class DiscoursePostal::PostalController < ::ApplicationController
     before_action :verify_signature
 
     def incoming
-      mg_body    = params['body-plain']
-      mg_subj    = params['subject']
-      mg_to      = params['To']
-      mg_from    = params['From']
-      mg_date    = params['Date']
+      # available fields:
+      # https://github.com/postalhq/postal/blob/0f30a53ebbc0f12eddd61f1397b955276bcd214f/lib/postal/http_sender.rb#L66-L95
+      p_body    = params['plain_body']
+      p_subj    = params['subject']
+      p_to      = params['to']
+      p_from    = params['from']
+      p_date    = params['date']
 
       m = Mail::Message.new do
-        to      mg_to
-        from    mg_from
-        date    mg_date
-        subject mg_subj
-        body    mg_body
+        to      p_to
+        from    p_from
+        date    p_date
+        subject p_subj
+        body    p_body
       end
 
       handler_url = SiteSetting.discourse_base_url + "/admin/email/handle_mail"
@@ -62,7 +56,7 @@ after_initialize do
       params = {'email'        => m.to_s,
                 'api_key'      => SiteSetting.discourse_api_key,
                 'api_username' => SiteSetting.discourse_api_username}
-      ::DiscourseMailgun::Engine.post(handler_url, params)
+      ::DiscoursePostal::Engine.post(handler_url, params)
 
       render plain: "done"
     end
@@ -76,18 +70,21 @@ after_initialize do
     private
 
     def verify_signature
-      unless ::DiscourseMailgun::Engine.verify_signature(params['timestamp'], params['token'], params['signature'], SiteSetting.mailgun_api_key)
+      key = SiteSetting.postal_webhook_public_key
+      signature = request.headers['HTTP_X_POSTAL_SIGNATURE']
+      body = request.body.read
+      unless ::DiscoursePostal::Engine.verify_signature(key, signature, body)
         render json: {}, :status => :unauthorized
       end
     end
   end
 
 
-  DiscourseMailgun::Engine.routes.draw do
-    post "/incoming" => "mailgun#incoming"
+  DiscoursePostal::Engine.routes.draw do
+    post "/incoming" => "postal#incoming"
   end
 
   Discourse::Application.routes.append do
-    mount ::DiscourseMailgun::Engine, at: "mailgun"
+    mount ::DiscoursePostal::Engine, at: "postal"
   end
 end
