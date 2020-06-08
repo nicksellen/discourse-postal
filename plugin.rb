@@ -45,7 +45,7 @@ after_initialize do
       # https://github.com/postalhq/postal/blob/0f30a53ebbc0f12eddd61f1397b955276bcd214f/lib/postal/http_sender.rb#L66-L95
       p_body    = params['plain_body']
       p_subj    = params['subject']
-      p_to      = params['to']
+      p_to      = params['rcpt_to'] || params['to']
       p_from    = params['from']
       p_date    = params['date']
 
