@@ -43,18 +43,31 @@ after_initialize do
     def incoming
       # available fields:
       # https://github.com/postalhq/postal/blob/0f30a53ebbc0f12eddd61f1397b955276bcd214f/lib/postal/http_sender.rb#L66-L95
-      p_body    = params['plain_body']
-      p_subj    = params['subject']
-      p_to      = params['rcpt_to'] || params['to']
-      p_from    = params['from']
-      p_date    = params['date']
+      p_body_plain = params['plain_body']
+      p_body_html  = params['html_body']
+      p_subj       = params['subject']
+      p_to         = params['rcpt_to'] || params['to']
+      p_from       = params['from']
+      p_date       = params['date']
 
       m = Mail::Message.new do
         to      p_to
         from    p_from
         date    p_date
         subject p_subj
-        body    p_body
+
+        if p_body_plain
+          text_part do
+            body p_body_plain
+          end
+        end
+
+        if p_body_html
+          html_part do
+            content_type 'text/html; charset=UTF-8'
+            body p_body_html
+          end
+        end
       end
 
       handler_url = SiteSetting.discourse_base_url + "/admin/email/handle_mail"
